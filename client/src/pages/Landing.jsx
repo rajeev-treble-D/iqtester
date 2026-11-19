@@ -1,31 +1,35 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
 import { ApiError, api } from '../api/client';
 import { Brand } from '../components/Brand';
-import { CATEGORIES, CATEGORY_LABELS } from '../lib/brand';
-import { clearSession, loadSession, saveSession } from '../lib/session';
+import { clearSession, loadLevel, loadSessions } from '../lib/session';
+import { useStartQuiz } from '../lib/start';
 
+const length = (quiz) => `${quiz.questions} questions, about ${quiz.minutes} min`;
+
+/** The home page: the General quiz up front, then every other quiz by group. */
 export function Landing() {
   const navigate = useNavigate();
-  const [info, setInfo] = useState(null);
-  const [previous, setPrevious] = useState(null);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState(null);
+  const [catalogue, setCatalogue] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  // Where the visitor stands in each quiz they have started on this device.
+  const [progress, setProgress] = useState({});
+  const { start, starting, error } = useStartQuiz();
 
   useEffect(() => {
     let cancelled = false;
     api
-      .testInfo()
-      .then((value) => !cancelled && setInfo(value))
-      .catch(() => undefined); // the page still works without the numbers
+      .quizzes()
+      .then((value) => !cancelled && setCatalogue(value))
+      .catch((err) => !cancelled && setLoadError(err instanceof ApiError ? err.message : 'Something went wrong.'));
 
-    const session = loadSession();
-    if (session) {
+    for (const [quizId, session] of Object.entries(loadSessions())) {
       api
         .state(session)
-        .then((state) => !cancelled && setPrevious(state))
+        .then((state) => !cancelled && setProgress((all) => ({ ...all, [quizId]: state })))
         .catch((err) => {
-          if (err instanceof ApiError && err.sessionLost) clearSession();
+          if (err instanceof ApiError && err.sessionLost) clearSession(quizId);
         });
     }
     return () => {
@@ -33,20 +37,42 @@ export function Landing() {
     };
   }, []);
 
-  async function start() {
-    setStarting(true);
-    setError(null);
-    try {
-      const { attemptId, token } = await api.start();
-      saveSession({ attemptId, token });
-      navigate('/test');
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong. Please try again.');
-      setStarting(false);
+  const actions = (quiz, primaryLabel) => {
+    const state = progress[quiz.id];
+    const busy = starting !== null;
+    if (state?.status === 'in_progress') {
+      return (
+        <>
+          <button className="button button--primary" type="button" onClick={() => navigate(`/quiz/${quiz.id}`)}>
+            Continue at question {state.number} of {state.count}
+          </button>
+          <button className="button" type="button" onClick={() => start(quiz)} disabled={busy}>
+            Start over
+          </button>
+        </>
+      );
     }
-  }
+    if (state?.status === 'completed') {
+      return (
+        <>
+          <button className="button button--primary" type="button" onClick={() => navigate(`/quiz/${quiz.id}/result`)}>
+            View your result
+          </button>
+          <button className="button" type="button" onClick={() => start(quiz)} disabled={busy}>
+            Take it again
+          </button>
+        </>
+      );
+    }
+    return (
+      <button className="button button--primary" type="button" onClick={() => start(quiz)} disabled={busy}>
+        {starting === quiz.id ? 'Starting...' : primaryLabel}
+      </button>
+    );
+  };
 
-  const inProgress = previous?.status === 'in_progress';
+  const general = catalogue?.quizzes.find((quiz) => quiz.group === 'general');
+  const knownLevel = loadLevel() !== null;
 
   return (
     <div className="page">
@@ -56,63 +82,68 @@ export function Landing() {
         </div>
       </header>
 
-      <main className="landing">
+      <main className="landing landing--wide">
         <section className="hero">
-          <p className="eyebrow">Reasoning test</p>
-          <h1>See how you reason with patterns, numbers and shapes.</h1>
+          <p className="eyebrow">Start here</p>
+          <h1>See how you think, remember and decide.</h1>
           <p className="lede">
-            {info ? `${info.questions} questions, about ${info.estimatedMinutes} minutes.` : 'A short test.'} No
-            sign-up. Questions start easy and get harder.
+            {general
+              ? `The General quiz covers everything in one sitting: ${length(general)}.`
+              : 'The General quiz covers everything in one sitting.'}{' '}
+            No sign-up. Afterwards it suggests which of the shorter quizzes to take next.
           </p>
-
-          {inProgress && previous ? (
-            <div className="hero__actions">
-              <button className="button button--primary" type="button" onClick={() => navigate('/test')}>
-                Continue at question {previous.index + 1} of {previous.total}
-              </button>
-              <button className="button" type="button" onClick={start} disabled={starting}>
-                Start over
-              </button>
-            </div>
-          ) : (
-            <div className="hero__actions">
-              <button className="button button--primary" type="button" onClick={start} disabled={starting}>
-                {starting ? 'Starting...' : 'Start the test'}
-              </button>
-              {previous?.status === 'completed' && (
-                <button className="button" type="button" onClick={() => navigate('/result')}>
-                  View your last result
-                </button>
-              )}
-            </div>
-          )}
-          {error && (
+          {general && <div className="hero__actions">{actions(general, 'Start the General quiz')}</div>}
+          {(error || loadError) && (
             <p className="notice notice--error" role="alert">
-              {error}
+              {error ?? loadError}
             </p>
           )}
         </section>
 
+        {!catalogue && !loadError && (
+          <p className="status" role="status">
+            Loading quizzes...
+          </p>
+        )}
+
+        {catalogue?.groups.map((group) => (
+          <section className="group" key={group.id} aria-labelledby={`group-${group.id}`}>
+            <div className="group__head">
+              <h2 id={`group-${group.id}`}>{group.title}</h2>
+              <p>
+                {group.blurb}
+                {group.id === 'ability' && knownLevel && ' Difficulty starts from your General quiz result.'}
+              </p>
+            </div>
+            <div className="cards">
+              {catalogue.quizzes
+                .filter((quiz) => quiz.group === group.id)
+                .map((quiz) => (
+                  <article className="card" key={quiz.id} data-done={progress[quiz.id]?.status === 'completed' || undefined}>
+                    <h3>{quiz.title}</h3>
+                    <p className="card__blurb">{quiz.blurb}</p>
+                    <p className="card__meta">{length(quiz)}</p>
+                    <div className="card__actions">{actions(quiz, 'Start')}</div>
+                  </article>
+                ))}
+            </div>
+          </section>
+        ))}
+
         <section className="panel" aria-labelledby="how">
           <h2 id="how">How it works</h2>
           <ul className="rules">
-            <li>One question at a time. Pick an answer to move on.</li>
-            <li>You can't go back, and every question needs an answer. If you're unsure, take your best guess.</li>
-            <li>There's no time limit per question. Your total time is shown but doesn't change your score.</li>
+            <li>One question at a time. Pick an answer to move on. You can't go back.</li>
+            <li>
+              Quizzes with right and wrong answers first ask how you rate yourself. That sets the starting difficulty;
+              after that, questions get harder when you answer correctly and easier when you don't.
+            </li>
+            <li>
+              Now and then you are shown a word or a number sequence to remember. You will be asked about it later.
+            </li>
+            <li>Your time is shown but doesn't change your score.</li>
             <li>Closed the tab by accident? Come back on this device and continue where you left off.</li>
           </ul>
-        </section>
-
-        <section className="panel" aria-labelledby="what">
-          <h2 id="what">What it measures</h2>
-          <dl className="skills">
-            {CATEGORIES.map((category) => (
-              <div key={category}>
-                <dt>{CATEGORY_LABELS[category].name}</dt>
-                <dd>{CATEGORY_LABELS[category].blurb}</dd>
-              </div>
-            ))}
-          </dl>
         </section>
       </main>
     </div>

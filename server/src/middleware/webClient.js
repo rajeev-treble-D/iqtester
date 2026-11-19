@@ -30,7 +30,7 @@ export function webClient(dir) {
     }),
   );
 
-  // Client-side routes (/test, /result) are all the same page. A path with a
+  // Client-side routes (/quiz/general, /quiz/general/result...) are all the same page. A path with a
   // file extension is a missing asset, which must stay a 404.
   router.use((req, res, next) => {
     const wantsPage =

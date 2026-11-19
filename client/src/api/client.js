@@ -8,7 +8,7 @@ export class ApiError extends Error {
     this.name = 'ApiError';
   }
 
-  /** The attempt no longer exists or has timed out - the only way on is a new test. */
+  /** The attempt no longer exists or has timed out - the only way on is a new attempt. */
   get sessionLost() {
     return this.status === 401 || this.status === 404 || this.status === 410;
   }
@@ -46,8 +46,8 @@ async function call(path, { method = 'GET', token, body } = {}) {
 }
 
 export const api = {
-  testInfo: () => call('/test'),
-  start: () => call('/attempts', { method: 'POST' }),
+  quizzes: () => call('/quizzes'),
+  start: (body) => call('/attempts', { method: 'POST', body }),
   state: (s) => call(`/attempts/${s.attemptId}`, { token: s.token }),
   answer: (s, body) => call(`/attempts/${s.attemptId}/answers`, { method: 'POST', token: s.token, body }),
   result: (s) => call(`/attempts/${s.attemptId}/result`, { token: s.token }),

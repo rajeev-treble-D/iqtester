@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError, api } from '../api/client';
 import { Brand } from '../components/Brand';
+import { InfoScreen } from '../components/InfoScreen';
+import { Memorize } from '../components/Memorize';
 import { OPTION_KEYS, Options } from '../components/Options';
 import { PromptView } from '../components/PromptView';
 import { clearSession, loadSession } from '../lib/session';
@@ -19,28 +21,33 @@ const FEEDBACK_MS = 220;
 
 export function Test() {
   const navigate = useNavigate();
-  const [session] = useState(loadSession);
+  const { quizId } = useParams();
+  const session = useMemo(() => loadSession(quizId), [quizId]);
   const [view, setView] = useState({ phase: 'loading' });
   const [selected, setSelected] = useState(null);
+  const [pending, setPending] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const busy = useRef(false);
 
   const accept = useCallback(
     (state) => {
-      if (state.status === 'completed') navigate('/result', { replace: true });
+      if (state.status === 'completed') navigate(`/quiz/${quizId}/result`, { replace: true });
       else setView(ready(state));
     },
-    [navigate],
+    [navigate, quizId],
   );
 
-  const fail = useCallback((err) => {
-    if (err instanceof ApiError && err.sessionLost) {
-      clearSession();
-      setView({ phase: 'lost', message: err.status === 410 ? err.message : 'This test session could not be found.' });
-    } else {
-      setView({ phase: 'error', message: err instanceof ApiError ? err.message : 'Something went wrong.' });
-    }
-  }, []);
+  const fail = useCallback(
+    (err) => {
+      if (err instanceof ApiError && err.sessionLost) {
+        clearSession(quizId);
+        setView({ phase: 'lost', message: err.status === 410 ? err.message : 'This quiz session could not be found.' });
+      } else {
+        setView({ phase: 'error', message: err instanceof ApiError ? err.message : 'Something went wrong.' });
+      }
+    },
+    [quizId],
+  );
 
   const load = useCallback(() => {
     if (!session) return;
@@ -53,31 +60,34 @@ export function Test() {
     else load();
   }, [session, load, navigate]);
 
-  const choose = useCallback(
+  /** Send the answer to the current step, or just move on when `choice` is left out. */
+  const submit = useCallback(
     async (choice) => {
       if (!session || view.phase !== 'ready' || busy.current) return;
       busy.current = true;
-      setSelected(choice);
+      setPending(true);
+      setSelected(choice ?? null);
       setSaveError(null);
       try {
         const [next] = await Promise.all([
-          api.answer(session, { index: view.state.index, choice }),
-          new Promise((resolve) => setTimeout(resolve, FEEDBACK_MS)),
+          api.answer(session, choice === undefined ? { index: view.state.index } : { index: view.state.index, choice }),
+          new Promise((resolve) => setTimeout(resolve, choice === undefined ? 0 : FEEDBACK_MS)),
         ]);
         accept(next);
       } catch (err) {
         if (err instanceof ApiError && err.status === 409) {
           // The server is ahead of this tab (retry after a dropped response,
-          // or the test is open twice). Catch up with what it has.
+          // or the quiz is open twice). Catch up with what it has.
           await api.state(session).then(accept).catch(fail);
         } else if (err instanceof ApiError && err.sessionLost) {
           fail(err);
         } else {
-          // Keep the question on screen so the answer can simply be picked again.
-          setSaveError(err instanceof ApiError ? err.message : 'Your answer could not be saved. Please try again.');
+          // Keep the step on screen so it can simply be tried again.
+          setSaveError(err instanceof ApiError ? err.message : 'That could not be saved. Please try again.');
         }
       } finally {
         busy.current = false;
+        setPending(false);
         setSelected(null);
       }
     },
@@ -85,7 +95,7 @@ export function Test() {
   );
 
   // Keyboard: A-H or 1-8 pick an option.
-  const optionCount = view.phase === 'ready' ? (view.state.question?.options.length ?? 0) : 0;
+  const optionCount = view.phase === 'ready' ? (view.state.step?.options?.length ?? 0) : 0;
   useEffect(() => {
     if (optionCount === 0) return;
     const onKey = (e) => {
@@ -95,18 +105,18 @@ export function Test() {
       const index = byLetter >= 0 ? byLetter : /^[1-8]$/.test(key) ? Number(key) - 1 : -1;
       if (index >= 0 && index < optionCount) {
         e.preventDefault();
-        void choose(index);
+        void submit(index);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [optionCount, choose]);
+  }, [optionCount, submit]);
 
   if (view.phase === 'loading') {
     return (
       <Shell>
         <p className="status" role="status">
-          Loading your test...
+          Loading your quiz...
         </p>
       </Shell>
     );
@@ -116,11 +126,11 @@ export function Test() {
     return (
       <Shell>
         <div className="status" role="alert">
-          <h1>{view.phase === 'lost' ? 'This test has ended' : "We couldn't load your test"}</h1>
+          <h1>{view.phase === 'lost' ? 'This quiz has ended' : "We couldn't load your quiz"}</h1>
           <p>{view.message}</p>
           {view.phase === 'lost' ? (
             <Link className="button button--primary" to="/">
-              Start a new test
+              Back to all quizzes
             </Link>
           ) : (
             <button className="button button--primary" type="button" onClick={load}>
@@ -133,47 +143,83 @@ export function Test() {
   }
 
   const { state, clockOffset } = view;
-  const question = state.question;
-  if (!question) return null; // completed: `accept` is already navigating to the result
+  const step = state.step;
+  if (!step) return null; // completed: `accept` is already navigating to the result
 
-  const visual = question.prompt.kind !== 'text';
+  const error = saveError && (
+    <p className="notice notice--error" role="alert">
+      {saveError}
+    </p>
+  );
+  const options = (extra) => (
+    <Options
+      options={step.options}
+      selected={selected}
+      disabled={pending}
+      onSelect={(choice) => void submit(choice)}
+      {...extra}
+    />
+  );
 
-  return (
-    <Shell
-      meta={<Progress index={state.index} total={state.total} startedAt={state.startedAt} clockOffset={clockOffset} />}
-      progress={state.index / state.total}
-    >
-      {/* Re-keyed per question so each one animates in and focus/scroll reset. */}
+  let stage;
+  if (step.kind === 'question') {
+    const visual = step.prompt.kind !== 'text';
+    stage = (
       <main className={`stage ${visual ? 'stage--split' : 'stage--stack'}`} key={state.index}>
         <section className="question">
-          <h1 className="question__text">{question.prompt.text}</h1>
-          {question.prompt.kind === 'text' ? (
-            question.prompt.body && (
-              <p className="question__body" data-long={question.prompt.body.length > 44 || undefined}>
-                {question.prompt.body}
+          <h1 className="question__text">{step.prompt.text}</h1>
+          {step.prompt.kind === 'text' ? (
+            step.prompt.body && (
+              <p className="question__body" data-long={step.prompt.body.length > 44 || undefined}>
+                {step.prompt.body}
               </p>
             )
           ) : (
-            <PromptView prompt={question.prompt} />
+            <PromptView prompt={step.prompt} />
           )}
         </section>
-
         <section className="answers">
           {visual && <h2 className="answers__title">Choose your answer</h2>}
-          <Options
-            options={question.options}
-            selected={selected}
-            disabled={selected !== null}
-            onSelect={(c) => void choose(c)}
-            pieces={question.prompt.kind === 'pattern'}
-          />
-          {saveError && (
-            <p className="notice notice--error" role="alert">
-              {saveError}
-            </p>
-          )}
+          {options({ pieces: step.prompt.kind === 'pattern' })}
+          {error}
         </section>
       </main>
+    );
+  } else if (step.kind === 'statement' || step.kind === 'recall') {
+    stage = (
+      <main className="stage stage--stack" key={state.index}>
+        <section className="question">
+          {step.scale === 'likert' && <p className="eyebrow">How much do you agree?</p>}
+          {step.scale === 'choice' && <p className="eyebrow">What would you do?</p>}
+          {step.kind === 'recall' && <p className="eyebrow">Memory</p>}
+          <h1 className="question__text">{step.text}</h1>
+        </section>
+        <section className="answers">
+          {options({ scale: step.scale })}
+          {error}
+        </section>
+      </main>
+    );
+  } else {
+    stage = (
+      <main className="stage stage--stack screen" key={state.index}>
+        {step.kind === 'memorize' ? (
+          <Memorize step={step} busy={pending} failed={Boolean(saveError)} onDone={() => void submit()} />
+        ) : (
+          <InfoScreen step={step} busy={pending} onContinue={() => void submit()} />
+        )}
+        {error}
+      </main>
+    );
+  }
+
+  return (
+    <Shell
+      meta={<Progress number={state.number} count={state.count} startedAt={state.startedAt} clockOffset={clockOffset} />}
+      progress={state.index / state.total}
+    >
+      {/* Re-keyed per step so each one animates in and focus/scroll reset. */}
+      {stage}
     </Shell>
   );
 }
@@ -183,7 +229,9 @@ function Shell({ children, meta, progress }) {
     <div className="page">
       <header className="topbar">
         <div className="topbar__row">
-          <Brand />
+          <Link className="brand-link" to="/" aria-label="All quizzes">
+            <Brand />
+          </Link>
           {meta}
         </div>
         {progress !== undefined && (
@@ -197,13 +245,13 @@ function Shell({ children, meta, progress }) {
   );
 }
 
-function Progress({ index, total, startedAt, clockOffset }) {
+function Progress({ number, count, startedAt, clockOffset }) {
   const elapsed = useElapsed(new Date(startedAt).getTime(), clockOffset);
   return (
     <div className="meta">
       <span className="meta__count" aria-live="polite">
         <span className="visually-hidden">Question </span>
-        <strong>{index + 1}</strong> of {total}
+        <strong>{number}</strong> of {count}
       </span>
       <span className="meta__clock" role="timer" aria-label="Time elapsed">
         {formatClock(elapsed)}

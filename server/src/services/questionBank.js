@@ -1,6 +1,5 @@
 import mongoose from 'mongoose';
 
-import { logger } from '../lib/logger.js';
 import { cryptoRng } from '../lib/random.js';
 import { Question } from '../models/Question.js';
 
@@ -18,20 +17,22 @@ const TTL_MS = 60_000;
 let bank = null;
 let loading = null;
 
-const slotKey = (s) => `${s.category}:${s.difficulty}`;
-
 async function loadBank() {
   const questions = await Question.find({ status: 'active' }).lean();
+  return indexBank(questions);
+}
+
+/** Exported for tests, which build a bank without a database. */
+export function indexBank(questions) {
   const byId = new Map();
-  const bySlot = new Map();
+  const byCategory = new Map();
   for (const q of questions) {
     byId.set(String(q._id), q);
-    const key = slotKey(q);
-    const list = bySlot.get(key);
+    const list = byCategory.get(q.category);
     if (list) list.push(q);
-    else bySlot.set(key, [q]);
+    else byCategory.set(q.category, [q]);
   }
-  return { loadedAt: Date.now(), byId, bySlot };
+  return { loadedAt: Date.now(), byId, byCategory };
 }
 
 export async function getBank() {
@@ -48,30 +49,15 @@ export function invalidateBank() {
 }
 
 /**
- * Fill each blueprint slot with a random unused question of that category and
- * difficulty. Slots the bank can't fill are skipped, so a partially built bank
- * still produces a (shorter) test.
+ * A random question of this category that the attempt hasn't seen, as close
+ * to `level` as the bank allows. Undefined when the category is used up.
  */
-export function selectForAttempt(source, blueprint, rng = cryptoRng, { quiet = false } = {}) {
-  const used = new Set();
-  const selected = [];
-  let unfilled = 0;
-
-  for (const slot of blueprint) {
-    const candidates = (source.bySlot.get(slotKey(slot)) ?? []).filter((q) => !used.has(String(q._id)));
-    const choice = candidates[rng(Math.max(candidates.length, 1))];
-    if (!choice) {
-      unfilled++;
-      continue;
-    }
-    used.add(String(choice._id));
-    selected.push(choice);
-  }
-
-  if (unfilled > 0 && !quiet) {
-    logger.warn({ unfilled, slots: blueprint.length }, 'question bank cannot fill every blueprint slot');
-  }
-  return selected;
+export function pickQuestion(source, category, level, usedIds, rng = cryptoRng) {
+  const unused = (source.byCategory.get(category) ?? []).filter((q) => !usedIds.has(String(q._id)));
+  if (unused.length === 0) return undefined;
+  const nearest = Math.min(...unused.map((q) => Math.abs(q.difficulty - level)));
+  const candidates = unused.filter((q) => Math.abs(q.difficulty - level) === nearest);
+  return candidates[rng(candidates.length)];
 }
 
 /** Look questions up by id: cache first, database for anything retired since. */

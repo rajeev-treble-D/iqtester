@@ -2,11 +2,16 @@ import { FigureSvg } from './FigureSvg';
 
 export const OPTION_KEYS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
-export function Options({ options, selected, disabled, onSelect, pieces = false }) {
+/**
+ * The answer buttons. `scale="likert"` is the agree/disagree set: no letters,
+ * and a tint that runs from agreement to disagreement.
+ */
+export function Options({ options, selected, disabled, onSelect, pieces = false, scale }) {
   const figures = options.some((o) => o.kind === 'figure');
+  const likert = scale === 'likert';
   return (
     <div
-      className={`options ${figures ? 'options--figures' : 'options--text'}`}
+      className={`options ${figures ? 'options--figures' : 'options--text'}${likert ? ' options--likert' : ''}`}
       role="group"
       aria-label="Answer options"
     >
@@ -18,13 +23,16 @@ export function Options({ options, selected, disabled, onSelect, pieces = false 
             type="button"
             className="option"
             data-selected={selected === i || undefined}
+            data-tone={likert ? i : undefined}
             disabled={disabled}
             onClick={() => onSelect(i)}
-            aria-label={option.kind === 'text' ? `${key}: ${option.text}` : `Option ${key}`}
+            aria-label={option.kind !== 'text' ? `Option ${key}` : likert ? option.text : `${key}: ${option.text}`}
           >
-            <span className="option__key" aria-hidden="true">
-              {key}
-            </span>
+            {!likert && (
+              <span className="option__key" aria-hidden="true">
+                {key}
+              </span>
+            )}
             {option.kind === 'text' ? (
               <span className="option__text">{option.text}</span>
             ) : (

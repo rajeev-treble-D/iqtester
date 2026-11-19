@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { answerRequestSchema } from '../schemas/index.js';
+import { answerRequestSchema, startRequestSchema } from '../schemas/index.js';
 import { parse } from '../lib/errors.js';
 import { attemptOf, requireAttempt } from '../middleware/attemptAuth.js';
 import { createAttemptLimiter } from '../middleware/security.js';
@@ -7,9 +7,9 @@ import { buildState, getResult, startAttempt, submitAnswer } from '../services/a
 
 export const attemptsRouter = Router();
 
-/** Start a test. Returns the first question and the attempt's secret token. */
-attemptsRouter.post('/', createAttemptLimiter, async (_req, res) => {
-  const { attempt, token } = await startAttempt();
+/** Start a quiz. Returns the first step and the attempt's secret token. */
+attemptsRouter.post('/', createAttemptLimiter, async (req, res) => {
+  const { attempt, token } = await startAttempt(parse(startRequestSchema, req.body));
   const body = { ...(await buildState(attempt)), token };
   res.status(201).json(body);
 });
@@ -20,7 +20,7 @@ attemptsRouter.get('/:id', requireAttempt, async (_req, res) => {
   res.json(body);
 });
 
-/** Answer the current question; responds with the next one (or completion). */
+/** Answer the current step (or continue past a screen with nothing to answer); responds with the next one. */
 attemptsRouter.post('/:id/answers', requireAttempt, async (req, res) => {
   const { index, choice } = parse(answerRequestSchema, req.body);
   const updated = await submitAnswer(attemptOf(res), index, choice);

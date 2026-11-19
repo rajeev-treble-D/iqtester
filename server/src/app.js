@@ -8,7 +8,7 @@ import { logger } from './lib/logger.js';
 import { apiLimiter, corsPolicy, noStore, securityHeaders } from './middleware/security.js';
 import { webClient } from './middleware/webClient.js';
 import { attemptsRouter } from './routes/attempts.js';
-import { testRouter } from './routes/test.js';
+import { quizzesRouter } from './routes/quizzes.js';
 
 export function createApp({ webDir } = {}) {
   const app = express();
@@ -35,7 +35,7 @@ export function createApp({ webDir } = {}) {
   });
 
   app.use('/api', corsPolicy, noStore, apiLimiter, express.json({ limit: '10kb' }));
-  app.use('/api/v1/test', testRouter);
+  app.use('/api/v1/quizzes', quizzesRouter);
   app.use('/api/v1/attempts', attemptsRouter);
 
   if (webDir) {

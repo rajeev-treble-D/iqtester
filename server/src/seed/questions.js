@@ -13,11 +13,13 @@ import {
   tri,
   windowOf,
 } from './shapes.js';
+import { ROOT_CAUSE, STRATEGY } from './scenarios.js';
 
 /**
  * Starter question bank: original items, at least one per question type and
- * render mode, so the whole flow can be exercised end to end. The full bank
- * (several items per blueprint slot) is authored in this same format.
+ * render mode, so the whole flow can be exercised end to end. Number series
+ * and logic have about three items per difficulty level; the visual
+ * categories are still thin. Scenario questions live in scenarios.js.
  *
  * Authoring rule: every item must have exactly one defensible answer. If a
  * second reading of the rule leads to another option, fix the item.
@@ -66,6 +68,27 @@ const SERIES = [
   series('series-gaps-double', 4, '2,  3,  5,  9,  17,  ?', 33, [25, 31, 34, 35]),
   // n squared times (n + 1)
   series('series-square-times-next', 5, '2,  12,  36,  80,  150,  ?', 252, [210, 232, 245, 294]),
+
+  // +5 each step
+  series('series-add-5', 1, '5,  10,  15,  20,  ?,  30', 25, [22, 24, 26, 35]),
+  // -2 each step
+  series('series-minus-2', 1, '20,  18,  16,  14,  ?,  10', 12, [8, 11, 13, 15]),
+  // square numbers
+  series('series-squares', 2, '1,  4,  9,  16,  ?,  36', 25, [20, 24, 27, 30]),
+  // divided by 3 each step
+  series('series-third', 2, '243,  81,  27,  9,  ?', 3, [1, 2, 6, 18]),
+  // each number is the sum of the two before it
+  series('series-sum-of-two', 3, '2,  3,  5,  8,  13,  ?', 21, [18, 19, 20, 23]),
+  // gaps grow by one: +1, +2, +3, +4, +5
+  series('series-growing-gaps', 3, '3,  4,  6,  9,  13,  ?', 18, [16, 17, 19, 20]),
+  // two series interleaved: 2, 4, 6, 8 and 20, 17, 14, 11
+  series('series-interleaved', 4, '2,  20,  4,  17,  6,  14,  8,  ?', 11, [10, 12, 13, 16]),
+  // n times (n + 1): gaps of 4, 6, 8, 10, 12
+  series('series-n-times-next', 4, '2,  6,  12,  20,  30,  ?', 42, [36, 40, 44, 56]),
+  // n to the power n
+  series('series-n-to-n', 5, '1,  4,  27,  256,  ?', 3125, [625, 1024, 2500, 3025]),
+  // gaps are 1, 3, 7, 15, 31: each gap is double the last, plus one
+  series('series-gaps-double-plus-one', 5, '1,  2,  5,  12,  27,  ?', 58, [48, 54, 56, 60]),
 ];
 
 /* ------------------------------------------------------------ verbal logic */
@@ -101,6 +124,112 @@ const LOGIC = [
     'All glims are tars. No tars are voxes.',
     'No glims are voxes',
     ['Some glims are voxes', 'All tars are glims', 'Some voxes are tars', 'All voxes are glims'],
+  ),
+
+  // the only vegetable among fruits
+  logic('logic-odd-vegetable', 1, 'Which one does not belong with the others?', undefined, 'Carrot', [
+    'Apple',
+    'Banana',
+    'Mango',
+    'Grape',
+  ]),
+  logic('logic-analogy-hive', 1, 'Bird is to nest as bee is to ...', undefined, 'Hive', [
+    'Honey',
+    'Flower',
+    'Wing',
+    'Sting',
+  ]),
+  logic(
+    'logic-clubs',
+    2,
+    'Which statement must be true?',
+    'Every student in the art club is also in the music club. Riya is in the art club.',
+    'Riya is in the music club',
+    [
+      'Riya is not in the music club',
+      'Everyone in the music club is in the art club',
+      'Riya is in the art club only',
+      'It cannot be known',
+    ],
+  ),
+  // Dev > Asha > Bela > Chitra
+  logic(
+    'logic-tallest',
+    3,
+    'Who is the tallest?',
+    'Asha is taller than Bela. Chitra is shorter than Bela. Dev is taller than Asha.',
+    'Dev',
+    ['Asha', 'Bela', 'Chitra', 'It cannot be known'],
+  ),
+  // 21 = 3 x 7; the others are prime. All are odd and have two digits.
+  logic('logic-odd-number', 3, 'Which number does not belong with the others?', undefined, '21', [
+    '13',
+    '17',
+    '19',
+    '23',
+  ]),
+  // every letter moves one place forward in the alphabet
+  logic(
+    'logic-letter-code',
+    3,
+    'In the same code, how is DOG written?',
+    'In a certain code, CAT is written as DBU.',
+    'EPH',
+    ['EPG', 'CNF', 'EOH', 'DPH'],
+  ),
+  logic(
+    'logic-match-rain',
+    4,
+    'Which conclusion follows?',
+    'If it rains, the match is cancelled. The match was not cancelled.',
+    'It did not rain',
+    ['It rained', 'It may or may not have rained', 'The match was moved to another day', 'The match was cancelled later'],
+  ),
+  // P R Q S T: R sits next to P, and T cannot be next to Q, so T takes the end.
+  logic(
+    'logic-row-of-five',
+    4,
+    'Who sits immediately to the right of Q?',
+    'Five friends sit in a row. P sits at the left end and Q in the middle. R sits next to P. T does not sit next to Q. The fifth friend is S.',
+    'S',
+    ['R', 'T', 'P', 'It cannot be known'],
+  ),
+  // chess -> cricket, and cricket rules out tennis, so a tennis player plays neither.
+  logic(
+    'logic-chess-cricket',
+    4,
+    'Which statement must be true?',
+    'In one class, everyone who plays chess also plays cricket. Nobody who plays cricket plays tennis. Meera plays tennis.',
+    'Meera does not play chess',
+    ['Meera plays chess', 'Meera plays cricket', 'Meera plays chess but not cricket', 'It cannot be known'],
+  ),
+  // Ali is not first, Bina is right behind Ali, Dia is fourth: Chen, Ali, Bina, Dia.
+  logic(
+    'logic-race-order',
+    4,
+    'Who finished second?',
+    'Four runners finished a race. Ali was not first. Bina finished immediately after Ali. Chen finished before Ali. Dia finished last.',
+    'Ali',
+    ['Bina', 'Chen', 'Dia', 'It cannot be known'],
+  ),
+  // Prize in 1: labels 1 and 2 true. In 3: labels 2 and 3 true. In 2: only label 3 true.
+  logic(
+    'logic-three-boxes',
+    5,
+    'Where is the prize?',
+    'One of three boxes holds a prize. Box 1 is labelled "The prize is in this box". Box 2 is labelled "The prize is not in this box". Box 3 is labelled "The prize is not in Box 1". Exactly one label is true.',
+    'Box 2',
+    ['Box 1', 'Box 3', 'It cannot be known'],
+  ),
+  // If C were truthful, A would be lying, making B truthful - but C said B lies. So C lies,
+  // B (who says so) is truthful, and A (who says B lies) is lying.
+  logic(
+    'logic-who-lies',
+    5,
+    'Who is telling the truth?',
+    'A says: "B is lying." B says: "C is lying." C says: "A and B are both lying." Each of them is either lying or telling the truth.',
+    'Only B',
+    ['Only A', 'Only C', 'A and C', 'B and C'],
   ),
 ];
 
@@ -316,4 +445,12 @@ const SPATIAL = [
   },
 ];
 
-export const SEED_QUESTIONS = [...PATTERN, ...MATRIX, ...SERIES, ...SPATIAL, ...LOGIC].map(build);
+export const SEED_QUESTIONS = [
+  ...PATTERN,
+  ...MATRIX,
+  ...SERIES,
+  ...SPATIAL,
+  ...LOGIC,
+  ...STRATEGY,
+  ...ROOT_CAUSE,
+].map(build);

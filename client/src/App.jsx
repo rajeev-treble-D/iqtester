@@ -7,8 +7,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/test" element={<Test />} />
-      <Route path="/result" element={<Result />} />
+      <Route path="/quiz/:quizId" element={<Test />} />
+      <Route path="/quiz/:quizId/result" element={<Result />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

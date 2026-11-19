@@ -1,9 +1,8 @@
-import { questionSchema } from '../src/schemas/index.js';
+import { CATEGORIES, questionSchema } from '../src/schemas/index.js';
 import { Types } from 'mongoose';
 import { describe, expect, it } from 'vitest';
-import { BLUEPRINT } from '../src/config/blueprint.js';
 
-import { selectForAttempt, toPublicQuestion } from '../src/services/questionBank.js';
+import { indexBank, pickQuestion, toPublicQuestion } from '../src/services/questionBank.js';
 import { SEED_QUESTIONS } from '../src/seed/questions.js';
 
 const docs = SEED_QUESTIONS.map((q) => ({
@@ -15,16 +14,6 @@ const docs = SEED_QUESTIONS.map((q) => ({
   createdAt: new Date(),
   updatedAt: new Date(),
 }));
-
-function bankOf(questions) {
-  const bank = { loadedAt: Date.now(), byId: new Map(), bySlot: new Map() };
-  for (const q of questions) {
-    bank.byId.set(String(q._id), q);
-    const key = `${q.category}:${q.difficulty}`;
-    bank.bySlot.set(key, [...(bank.bySlot.get(key) ?? []), q]);
-  }
-  return bank;
-}
 
 describe('seed questions', () => {
   it.each(SEED_QUESTIONS.map((q) => [q.key, q]))('%s is valid', (_key, q) => {
@@ -45,6 +34,10 @@ describe('seed questions', () => {
       expect(new Set(rendered).size, q.key).toBe(rendered.length);
     }
   });
+
+  it('cover every category', () => {
+    expect(new Set(SEED_QUESTIONS.map((q) => q.category))).toEqual(new Set(CATEGORIES));
+  });
 });
 
 describe('question bank', () => {
@@ -63,20 +56,33 @@ describe('question bank', () => {
     }
   });
 
-  it('fills blueprint slots without repeating a question', () => {
-    const picked = selectForAttempt(bankOf(docs), BLUEPRINT);
-    expect(picked.length).toBeGreaterThan(0);
-    expect(new Set(picked.map((q) => String(q._id))).size).toBe(picked.length);
-    const levels = picked.map((q) => q.difficulty);
-    expect([...levels].sort((a, b) => a - b)).toEqual(levels);
+  it('picks the question nearest to the current level', () => {
+    const bank = indexBank(docs);
+    for (const level of [1, 2, 3, 4, 5]) {
+      expect(pickQuestion(bank, 'series', level, new Set()).difficulty).toBe(level);
+    }
+    // No spatial question at level 5: the closest one there is.
+    expect(pickQuestion(bank, 'spatial', 5, new Set()).difficulty).toBe(3);
   });
 
-  it('varies the selection when a slot has several candidates', () => {
-    const twin = { ...docs[0], _id: new Types.ObjectId(), key: 'twin' };
-    const bank = bankOf([docs[0], twin]);
-    const slot = [{ category: twin.category, difficulty: twin.difficulty }];
+  it('never repeats a question, and stops when the category is used up', () => {
+    const bank = indexBank(docs);
+    const used = new Set();
+    const total = docs.filter((q) => q.category === 'logic').length;
+    for (let i = 0; i < total; i++) {
+      const q = pickQuestion(bank, 'logic', 3, used);
+      expect(q.category).toBe('logic');
+      expect(used.has(String(q._id))).toBe(false);
+      used.add(String(q._id));
+    }
+    expect(pickQuestion(bank, 'logic', 3, used)).toBeUndefined();
+    expect(pickQuestion(bank, 'no-such-category', 3, new Set())).toBeUndefined();
+  });
+
+  it('varies the selection when several questions fit', () => {
+    const bank = indexBank(docs);
     const seen = new Set();
-    for (let i = 0; i < 40; i++) seen.add(String(selectForAttempt(bank, slot)[0]?._id));
-    expect(seen.size).toBe(2);
+    for (let i = 0; i < 60; i++) seen.add(String(pickQuestion(bank, 'series', 2, new Set())._id));
+    expect(seen.size).toBe(docs.filter((q) => q.category === 'series' && q.difficulty === 2).length);
   });
 });

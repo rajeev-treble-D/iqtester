@@ -1,6 +1,6 @@
 import { questionSchema } from '../schemas/index.js';
 import { z } from 'zod';
-import { BLUEPRINT } from '../config/blueprint.js';
+import { QUIZZES } from '../config/quizzes.js';
 
 import { Attempt } from '../models/Attempt.js';
 import { Question } from '../models/Question.js';
@@ -40,18 +40,15 @@ export async function seedQuestions() {
   return { upserted: outcome.upsertedCount, total: questions.length };
 }
 
-export function blueprintCoverage() {
+/** For the seed log: which quizzes ask for more questions of a category than the bank has. */
+export function bankCoverage() {
   const have = new Map();
-  for (const q of SEED_QUESTIONS) {
-    const k = `${q.category}:${q.difficulty}`;
-    have.set(k, (have.get(k) ?? 0) + 1);
-  }
-  const need = new Map();
-  for (const s of BLUEPRINT) {
-    const k = `${s.category}:${s.difficulty}`;
-    need.set(k, (need.get(k) ?? 0) + 1);
-  }
-  let filled = 0;
-  for (const [k, n] of need) filled += Math.min(n, have.get(k) ?? 0);
-  return `${filled} of ${BLUEPRINT.length} blueprint slots can be filled`;
+  for (const q of SEED_QUESTIONS) have.set(q.category, (have.get(q.category) ?? 0) + 1);
+
+  const short = QUIZZES.flatMap((quiz) =>
+    Object.entries(quiz.questions ?? {})
+      .filter(([category, wanted]) => (have.get(category) ?? 0) < wanted)
+      .map(([category, wanted]) => `${quiz.id} wants ${wanted} ${category}, bank has ${have.get(category) ?? 0}`),
+  );
+  return short.length ? `Short of questions: ${short.join('; ')}` : 'Every quiz can be filled';
 }

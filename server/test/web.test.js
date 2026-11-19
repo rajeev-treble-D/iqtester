@@ -23,7 +23,7 @@ describe('web client', () => {
   });
 
   it('serves the page at the root and on client-side routes', async () => {
-    for (const url of ['/', '/test', '/result', '/anything/else']) {
+    for (const url of ['/', '/quiz/general', '/quiz/general/result', '/anything/else']) {
       const res = await request(app).get(url).expect(200);
       expect(res.headers['content-type']).toMatch(/text\/html/);
       expect(res.text).toContain('<div id="root">');
@@ -58,8 +58,8 @@ describe('web client', () => {
     const missing = await request(app).get('/assets/missing.js').expect(404);
     expect(missing.body.error.code).toBe('not_found');
 
-    await request(app).post('/test').expect(404);
-    await request(app).get('/test').set('Accept', 'application/json').expect(404);
+    await request(app).post('/quiz/general').expect(404);
+    await request(app).get('/quiz/general').set('Accept', 'application/json').expect(404);
   });
 
   it('does not expose files outside the build', async () => {
