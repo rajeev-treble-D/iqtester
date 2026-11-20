@@ -55,6 +55,15 @@
   box-sizing: border-box;
 }
 
+/*
+ * Keep room for the scrollbar even when there is nothing to scroll. Some quiz
+ * steps fit in the window and some don't; without this the scrollbar comes and
+ * goes from one step to the next and the whole page jumps sideways each time.
+ */
+html {
+  scrollbar-gutter: stable;
+}
+
 body {
   margin: 0;
   background: var(--bg);
@@ -164,7 +173,8 @@ svg {
   width: 100%;
   max-width: 1120px;
   margin: 0 auto;
-  padding: clamp(20px, 4vw, 52px) 24px 64px;
+  /* Less empty space below on a short window, so fewer steps need scrolling at all. */
+  padding: clamp(20px, 4vw, 52px) 24px clamp(24px, 6vh, 64px);
   animation: enter 0.28s ease both;
 }
 
@@ -1244,10 +1254,17 @@ svg {
   }
 }
 
+/*
+ * Each step fades in while settling a few pixels into place. It must come
+ * from above, not from below: the page is exactly as tall as the window, so a
+ * step shifted down makes the page taller than the window for a moment, and
+ * the browser shows a scrollbar that pushes everything sideways and back.
+ * Content shifted up doesn't add to the scrollable height.
+ */
 @keyframes enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(-6px);
   }
 }
 
